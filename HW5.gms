@@ -39,9 +39,29 @@ October 9, 2024
 $offtext
 
 
-* 1. DEFINE the SETS (watering months)
-Sets m monthly time steps /1*6/;
-    
+$ontext
+CEE 5410/6410 - Water Resources Systems Analysis
+HW 5 - Reservoir Problem
+
+THE PROBLEM:
+
+A reservoir is designed to provide hydropower and water for irrigation.
+...
+
+Table 1.
+Month   Inflow Units    Hydropower Benefits ($/unit)    Irrigation Benefits ($/unit)
+1           2                    1.6                                1.0
+2           2                    1.7                                1.2
+3           3                    1.8                                1.9
+4           4                    1.9                                2.0
+5           3                    2.0                                2.2
+6           2                    2.0                                2.2;
+
+$offtext
+
+* 1. DEFINE the SETS (watering months, one through six)
+Sets 
+    m /1*6/;
 
 * 2. DEFINE input data in Table
 Table data(m,*) 'Inflow, Hydropower Benefits, Irrigation Benefits'
@@ -53,7 +73,6 @@ Table data(m,*) 'Inflow, Hydropower Benefits, Irrigation Benefits'
 5           3                    2.0                                2.2
 6           2                    2.0                                2.2;
 
-
 * 3. Define Scalars to initialize parameters of dimensionality zero.
 Scalars
     turbine_cap /4/
@@ -61,47 +80,52 @@ Scalars
     reservoir_cap /9/
     initial_S /5/;
 
-
 * 4. DEFINE the variables
 VARIABLES
-    S(m)    'Storage at the end of month m'
-    T(m)    'Turbine release in month m'
-    I(m)    'Irrigation release in month m'
-    spill(m)'Spill in month m'
-    Z       'Total benefits';
+    S(m)      'Storage at the end of month m'
+    T(m)      'Units used for Hydropower Turbines in month m'
+    spill(m)  'Units spilled from reservoir and bypassing hydropower turbines in month m'
+    I(m)      'Units used for Irrigation in month m'
+    flow_A(m) 'Units retained in River at Point A each month'
+    Z         'Total benefits';
 
 * Establish non-negativity constraints
-POSITIVE VARIABLES X;
+POSITIVE VARIABLES S, T, spill, I, flow_A;
 
 * 4. COMBINE variables and data in equations
 EQUATIONS
    objective             'Total profit ($) and objective function value'
-   res_mass_balance(m)   'Water Mass Balance for Reservoir'
-   turbine_capacity(m)   'Monthly Turbine Capacity Constraint'
-   min_flow_A(m)         'Minimum Unit Delivery to River at A'
-   reservoir_capacity(m) 'Reservoir Capacity Constraint'
-   initial_ending_S      'Initial and Ending Storage Constraint'
-   begin_S               'Begin Storage Constraint for Timestep 1';
+   m1_S                  'Mass Balance Equation at Month 1'
+   res_mass_balance      'Water Mass Balance for Reservoir from Month 2 to Month 6'
+   reservoir_capacity    'Reservoir Capacity Constraint'
+   turbine_capacity      'Monthly Turbine Capacity Constraint'
+   irr_diversion         'Inflows to Irrigation Diversion Equal Outflows at Irrigation Diversion'
+   min_flow_A            'Minimum Unit Delivery to River at Point A'
+   initial_ending_S      'Initial and Ending Storage Constraint are the same';
 
 * Objective Function: Maximize Total Benefits from Hydropower and Irrigation Releases
-objective..  Z =e= sum(m, data(m,'HP_benefits')*T(m) + data(m,'IRR_benefits')*I(m));
+objective..  Z =e= sum(m, data(m,'HP_benefits')*T(m)) + sum(m, data(m,'IRR_benefits')*I(m));
 
-* Reservoir Mass Balance Equation
-res_mass_balance(m)..
-    S(m+1) =e= S(m) + data(m,'inflow') - spill(m) - T(m)
-    $(ord(m) lt card(m) + initial_S$(ord(m) eq card(m)));
-    
-*Begin Storage Constraint for Timestep 1
-begin_S.. S('1') =e= initial_S;
+* Mass Balance Equation at First Month of Operation
+m1_S.. S('1') =e= initial_S + data('1', 'inflow') - spill('1') - T('1');
+
+* Reservoir Mass Balance Equation for Months 2 through 6, based on previous months storage plus the inflow minus the spill and release for hydropower
+res_mass_balance(m)$(ord(m) > 1).. S(m) =e= S(m-1) + data(m,'inflow') - spill(m) - T(m);
+
+* Reservoir Capacity Constraint
+reservoir_capacity(m).. S(m) =l= reservoir_cap;
 
 * Turbine Capacity Constraint
 turbine_capacity(m).. T(m) =l= turbine_cap;
 
-* Minimum Flow Requirement at Point A in River
-min_flow_A(m).. T(m) + spill(m) =g= minimum_flow_A;
+*Irrigation Diversion Equation, Units bypassing turbines plus the spill is equal to the downstream flow, one unit must be allocated to point A each month
+irr_diversion(m).. T(m) + spill(m) - flow_A(m) =e= I(m);
 
-* Reservoir Capacity Constraint
-reservoir_capacity(m).. S(m) =l= reservoir_cap;
+* Minimum Flow Requirement at Point A in River
+min_flow_A(m).. flow_A(m) =g= minimum_flow_A;
+
+* End Storage Constraint, Storage at the End is greater than or equal to the initial storage
+initial_ending_S.. S('6') =g= initial_S;
 
 * 7. Model definition
 Model reservoir /all/;
@@ -109,6 +133,5 @@ Model reservoir /all/;
 * 8. Solve the model using linear programming
 Solve reservoir maximizing Z using lp;
 
-
-* 9. CLick File menu => RUN (F9) or Solve icon and examine solution report in .LST file
-
+* 9. Display results
+Display Z.l, T.l, I.l, S.l, spill.l;
